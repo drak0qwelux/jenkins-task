@@ -1,0 +1,12 @@
+dockerhub_registry: "docker.io"
+dockerhub_username: "ddrak00"
+dockerhub_password: "dckr_pat_9B0VkZLbly--VmTtV_3m7rpAzlM"
+vault_docker_images:
+  - name: nginx-proxy
+    image: "ddrak00/nginx-proxy:2.0"
+    ports:
+      - "80:80"
+  - name: apache-proxy
+    image: "ddrak00/apache-proxy:2.0"
+    ports:
+      - "8080:80"

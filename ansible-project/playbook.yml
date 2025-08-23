@@ -1,0 +1,9 @@
+---
+- name: Install Docker and run containers
+  hosts: all
+  become: true
+  vars_files:
+    - group_vars/vault.yml
+  roles:
+    - role: docker
+    - role: deploy-container

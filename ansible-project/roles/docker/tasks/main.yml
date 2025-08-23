@@ -1,0 +1,31 @@
+---
+- name: Install required packages (Ubuntu)
+  apt:
+    name: ["apt-transport-https", "ca-certificates", "curl", "software-properties-common"]
+    state: present
+    update_cache: yes
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Install Docker (Ubuntu)
+  apt:
+    name: docker.io
+    state: present
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Install required packages (Fedora)
+  dnf:
+    name: ["dnf-plugins-core", "device-mapper-persistent-data", "lvm2"]
+    state: present
+  when: ansible_facts['os_family'] == "RedHat"
+
+- name: Install Docker (Fedora)
+  dnf:
+    name: docker
+    state: present
+  when: ansible_facts['os_family'] == "RedHat"
+
+- name: Ensure Docker service is running
+  service:
+    name: docker
+    state: started
+    enabled: yes

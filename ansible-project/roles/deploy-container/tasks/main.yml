@@ -1,0 +1,54 @@
+---
+- name: Login to Docker Hub
+  community.docker.docker_login:
+    registry_url: "{{ dockerhub_registry }}"
+    username: "{{ dockerhub_username }}"
+    password: "{{ dockerhub_password }}"
+  become: true
+
+- name: Pull application images from Docker Hub
+  community.docker.docker_image:
+    name: "{{ item.image }}"
+    source: pull
+    force_source: true
+  loop: "{{ vault_docker_images }}"
+  loop_control:
+    label: "{{ item.name }}"
+  become: true
+
+- name: Ensure old container is absent
+  community.docker.docker_container:
+    name: "{{ item.name }}"
+    state: absent
+    force_kill: true
+  loop: "{{ vault_docker_images }}"
+  loop_control:
+    label: "{{ item.name }}"
+  become: true
+
+- name: Create Docker network mynet if it doesn't exist
+  community.docker.docker_network:
+    name: mynet
+    state: present
+
+- name: Run Nginx container
+  community.docker.docker_container:
+    name: nginx-proxy
+    image: "ddrak00/nginx-proxy:2.0"
+    state: started
+    restart_policy: always
+    networks:
+      - name: mynet
+    ports:
+      - "80:80"
+
+- name: Run Apache container
+  community.docker.docker_container:
+    name: apache-proxy
+    image: "ddrak00/apache-proxy:2.0"
+    state: started
+    restart_policy: always
+    networks:
+      - name: mynet
+    ports:
+      - "8080:80"
