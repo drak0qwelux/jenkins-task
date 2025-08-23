@@ -1,0 +1,112 @@
+pipeline {
+  agent any
+
+  environment {
+    DOCKERHUB_CRED = 'dockerhub-creds'
+    SSH_KEY_CRED   = 'vm-ssh-key'
+    IMAGE_NAME     = "ddrak00/nginx-proxy"
+    IMAGE_NAME_AP  = "ddrak00/apache-proxy"
+    IMAGE_TAG      = "${env.BUILD_NUMBER}"
+    FULL_IMAGE     = "${IMAGE_NAME}:${IMAGE_TAG}"
+    FULL_IMAGE_AP  = "${IMAGE_NAME_AP}:${IMAGE_TAG}"
+    ANSIBLE_PLAYBOOK = "ansible-project/playbook.yml"
+    ANSIBLE_INVENTORY = "ansible-project/inventory.ini"
+  }
+
+  options {
+    buildDiscarder(logRotator(numToKeepStr: '30'))
+    timestamps()
+    ansiColor('xterm')
+  }
+
+  stages {
+
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('Build images') {
+      steps {
+        script {
+          sh '''
+            docker build -t ${IMAGE_NAME}:latest ./nginx || true
+            docker tag ${IMAGE_NAME}:latest ${FULL_IMAGE}
+
+            docker build -t ${IMAGE_NAME_AP}:latest ./apache || true
+            docker tag ${IMAGE_NAME_AP}:latest ${FULL_IMAGE_AP}
+          '''
+        }
+      }
+    }
+
+    stage('Docker Login & Push') {
+      steps {
+        script {
+          withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CRED}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+            sh '''
+              echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+
+              docker push ${IMAGE_NAME}:latest || true
+              docker push ${FULL_IMAGE} || true
+
+              docker push ${IMAGE_NAME_AP}:latest || true
+              docker push ${FULL_IMAGE_AP} || true
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Run Ansible deploy (to Yandex VMs)') {
+      steps {
+        script {
+          withCredentials([sshUserPrivateKey(credentialsId: "${SSH_KEY_CRED}", keyFileVariable: 'SSH_KEY_FILE')]) {
+            sh '''
+              python3 -m venv .venv || true
+              . .venv/bin/activate
+              pip install --upgrade pip setuptools wheel
+              pip install ansible==8.7.0 || true
+              pip install "ansible-core" || true
+              pip install "ansible[azure]" || true || true
+
+              export ANSIBLE_HOST_KEY_CHECKING=False
+
+              ANSIBLE_PRIVATE_KEY_FILE="$SSH_KEY_FILE" \
+              ansible-playbook ${ANSIBLE_PLAYBOOK} -i ${ANSIBLE_INVENTORY} \
+                --extra-vars "image_name=${IMAGE_NAME} image_tag=${IMAGE_TAG} image_name_ap=${IMAGE_NAME_AP} image_tag_ap=${IMAGE_TAG}"
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Cleanup: Prune old images on Jenkins host') {
+      steps {
+        script {
+          sh '''
+            docker image prune -f
+            docker container prune -f
+            docker volume prune -f
+            docker images --format "{{.Repository}}:{{.Tag}} {{.ID}} {{.CreatedSince}}" | grep -v "<none>" || true
+            docker system prune -af --filter "until=48h" || true
+          '''
+        }
+      }
+    }
+
+  } // end stages
+
+  post {
+    success {
+      echo "Pipeline succeeded: ${FULL_IMAGE}, ${FULL_IMAGE_AP}"
+    }
+    failure {
+      echo "Pipeline failed, check console output"
+    }
+    always {
+      sh 'rm -f $SSH_KEY_FILE || true'
+    }
+  }
+}
