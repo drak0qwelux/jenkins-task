@@ -96,7 +96,7 @@ pipeline {
       }
     }
 
-  } // end stages
+  }
 
   post {
     success {
